@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Maintenance Email Generator</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="wrap">
+    <h1>Maintenance Email Generator</h1>
+    <div class="two">
+      <form id="form" class="card" enctype="multipart/form-data">
+        <h2>Basic Info</h2>
+        <div class="grid">
+          <label>Jira Ref
+            <input name="jira_ref" placeholder="DD-2000"/>
+          </label>
+          <label>PoP
+            <input name="pop" placeholder="DE.FKT.EQX"/>
+          </label>
+          <label>Equipment/Device
+            <input name="equipment" placeholder="Infinera XTC-10"/>
+          </label>
+        </div>
+        <div class="grid">
+          <label>Line (free form)
+            <input name="line" placeholder="Frankfurt - Amsterdam"/>
+          </label>
+        </div>
+
+        <h2>Maintenance Window (single UTC offset; shown as UTC+0 in email)</h2>
+        <div class="grid">
+          <label>Start Date (DD/MM/YY or YYYY)
+            <input name="start_date" placeholder="26/09/2025"/>
+          </label>
+          <label>Start Time (HH:MM)
+            <input name="start_time" placeholder="22:00"/>
+          </label>
+          <label>UTC Offset (+3, -1, +4:30)
+            <input name="utc_single" placeholder="+3"/>
+          </label>
+        </div>
+        <div class="grid">
+          <label>End Date (DD/MM/YY or YYYY)
+            <input name="end_date" placeholder="27/09/2025"/>
+          </label>
+          <label>End Time (HH:MM)
+            <input name="end_time" placeholder="02:00"/>
+          </label>
+          <label>Override Downtime (optional)
+            <input name="override_downtime" placeholder="1H 15M"/>
+          </label>
+        </div>
+
+        <h2>Purpose of Maintenance</h2>
+        <div class="grid" style="grid-template-columns: 1fr;">
+          <div class="checks">
+            <label><input type="checkbox" name="purpose_presets" value="Network upgrade"> Network upgrade</label>
+            <label><input type="checkbox" name="purpose_presets" value="Capacity expansion"> Capacity expansion</label>
+            <label><input type="checkbox" name="purpose_presets" value="Software updates"> Software updates</label>
+            <label><input type="checkbox" name="purpose_presets" value="Optical spectrum optimization"> Optical spectrum optimization</label>
+            <label><input type="checkbox" name="purpose_presets" value="Digital capacity optimization"> Digital capacity optimization</label>
+            <label><input type="checkbox" name="purpose_presets" value="Equipment migration"> Equipment migration</label>
+            <label><input type="checkbox" name="purpose_presets" value="Replace of broken equipment"> Replace of broken equipment</label>
+          </div>
+          <label>Custom purpose (optional)
+            <input name="purpose_free" placeholder="Replace FRM-20X-R-EC"/>
+          </label>
+        </div>
+
+        <h2>Upload Service Lists (optical and/or digital cross-connections .tsv files)</h2>
+        <p>Can be used only cross-connections files.</p>
+        <input type="file" name="files" multiple accept=".tsv,.txt"/>
+
+        <div class="actions">
+          <button type="button" id="downloadBtn">Download</button>
+        </div>
+      </form>
+
+      <div class="card preview">
+        <h2>Live Preview</h2>
+        <label>Subject</label>
+        <textarea id="subject" rows="2" readonly></textarea>
+        <label>Body</label>
+        <textarea id="body" rows="22" readonly></textarea>
+        <div class="muted" id="calc"></div>
+      </div>
+    </div>
+  </div>
+  <script>
+    const form = document.getElementById('form');
+    const subjectEl = document.getElementById('subject');
+    const bodyEl = document.getElementById('body');
+    const calcEl = document.getElementById('calc');
+    const downloadBtn = document.getElementById('downloadBtn');
+
+    let timer = null;
+    function debouncePreview() {
+      clearTimeout(timer);
+      timer = setTimeout(sendPreview, 200);
+    }
+    function sendPreview() {
+      const fd = new FormData(form);
+      fetch('/api/preview', { method: 'POST', body: fd })
+        .then(r => r.json())
+        .then(data => {
+          if (data.ok) {
+            subjectEl.value = data.subject || '';
+            bodyEl.value = data.body || '';
+            calcEl.textContent = data.calculated_downtime ? ('Calculated downtime: ' + data.calculated_downtime) : '';
+          } else {
+            subjectEl.value = '';
+            bodyEl.value = data.error || 'Error';
+            calcEl.textContent = '';
+          }
+        }).catch(e => {
+          bodyEl.value = 'Preview error';
+        });
+    }
+    form.addEventListener('input', debouncePreview);
+    form.addEventListener('change', debouncePreview);
+    window.addEventListener('load', sendPreview);
+
+    downloadBtn.addEventListener('click', () => {
+      const fd = new FormData();
+      fd.append('subject', subjectEl.value);
+      fd.append('body', bodyEl.value);
+      fetch('/download.txt', { method: 'POST', body: fd })
+        .then(r => r.text())
+        .then(txt => {
+          const blob = new Blob([txt], {type:'text/plain;charset=utf-8'});
+          const a = document.createElement('a');
+          a.href = URL.createObjectURL(blob);
+          a.download = 'maintenance_email.txt';
+          a.click();
+          URL.revokeObjectURL(a.href);
+        });
+    });
+  </script>
+</body>
+</html>
